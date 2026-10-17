@@ -2,18 +2,19 @@
 
 Auf Papier bekam eine Person mit Stimmgewicht 4 vier Stimmzettel und konnte
 jeden davon anders ausfüllen. Diese Patches bringen genau das in OpenSlides –
-für **Wahlen**. Bei **Anträgen** bleibt die Stimme unteilbar.
+für **Personenwahlen**. Bei **Anträgen** und **Listenwahlen** bleibt die Stimme
+unteilbar.
 
 ## So sieht es aus
 
-Bei einer elektronischen Wahl erscheint unter den Stimmknöpfen
+Bei einer elektronischen Personenwahl erscheint unter den Stimmknöpfen
 **„Stimmen aufteilen“**, wenn
 
 - Stimmgewichte in der Sitzung aktiviert sind und
 - die Person mehr als eine Stimme hat (bei uns 2, 3 oder 4).
 
 Dann bekommt die Person einen **Stimmzettel pro Stimme**. Jeder Stimmzettel
-wird wie gewohnt ausgefüllt: Ja bei Kandidierenden (bis zur erlaubten
+wird mit denselben Kreuz-Knöpfen wie gewohnt ausgefüllt: Ja bei Kandidierenden (bis zur erlaubten
 Stimmenzahl) oder die generelle Enthaltung. Absenden geht erst, wenn jeder
 Stimmzettel ausgefüllt ist. Das funktioniert auch für übertragene Stimmen.
 
@@ -23,8 +24,9 @@ ein eigenes Symbol, dass jemand aufgeteilt hat.
 
 ## Regeln (geprüft im Vote-Service)
 
-- Nur bei Wahlen. Bei Anträgen und sonstigen Abstimmungen lehnt der Server
-  aufgeteilte Stimmen ab.
+- Nur bei Personenwahlen. Bei Anträgen, Listenwahlen, Themen-Abstimmungen und
+  allen anderen Abstimmungen lehnt der Server aufgeteilte Stimmen ab – auch
+  wenn jemand die Oberfläche umgeht.
 - Nur wenn `users_enable_vote_weight` in der Sitzung aktiv ist.
 - Die Teile müssen zusammen exakt das Stimmgewicht ergeben.
 - Jeder Teil muss größer als 0 sein, höchstens 6 Nachkommastellen, max. 100 Teile.

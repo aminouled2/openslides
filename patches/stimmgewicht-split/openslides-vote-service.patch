@@ -1,5 +1,5 @@
 diff --git a/vote/vote.go b/vote/vote.go
-index e09b2f7..4f8f005 100644
+index e09b2f7..6fbe4d3 100644
 --- a/vote/vote.go
 +++ b/vote/vote.go
 @@ -7,6 +7,7 @@ import (
@@ -30,8 +30,8 @@ index e09b2f7..4f8f005 100644
  
 +	var split []splitVoteData
 +	if isSplit {
-+		if !strings.HasPrefix(poll.ContentObjectID, "assignment/") {
-+			return MessageError(ErrInvalid, "Split votes are only allowed in elections")
++		if err := ensureSplitAllowed(ctx, &ds.Fetch, poll); err != nil {
++			return err
 +		}
 +
 +		if !voteWeightEnabled {
@@ -70,7 +70,53 @@ index e09b2f7..4f8f005 100644
  	}
  
  	if poll.Type != "named" {
-@@ -687,6 +720,61 @@ func (m *maybeInt) Value() (int, bool) {
+@@ -314,6 +347,33 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
+ 	return nil
+ }
+ 
++// ensureSplitAllowed makes sure, that a vote weight can be split in the poll.
++//
++// This is only allowed in elections of persons. Motions, list elections and
++// all other polls can not be split.
++func ensureSplitAllowed(ctx context.Context, fetch *dsfetch.Fetch, poll dsmodels.Poll) error {
++	if !strings.HasPrefix(poll.ContentObjectID, "assignment/") {
++		return MessageError(ErrInvalid, "Split votes are only allowed in elections")
++	}
++
++	contentObjectIDs := make([]dsfetch.Maybe[string], len(poll.OptionIDs))
++	for i, optionID := range poll.OptionIDs {
++		fetch.Option_ContentObjectID(optionID).Lazy(&contentObjectIDs[i])
++	}
++
++	if err := fetch.Execute(ctx); err != nil {
++		return fmt.Errorf("fetching content objects of options: %w", err)
++	}
++
++	for _, contentObjectID := range contentObjectIDs {
++		if id, ok := contentObjectID.Value(); ok && strings.HasPrefix(id, "poll_candidate_list/") {
++			return MessageError(ErrInvalid, "Split votes are not allowed in list elections")
++		}
++	}
++
++	return nil
++}
++
+ // getMeetingUser returns the meeting_user id between a userID and a meetingID.
+ func getMeetingUser(ctx context.Context, fetch *dsfetch.Fetch, userID, meetingID int) (int, bool, error) {
+ 	meetingUserIDs, err := fetch.User_MeetingUserIDs(userID).Value(ctx)
+@@ -593,6 +653,11 @@ func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll) error {
+ 	ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Lazy(&dummyBool)
+ 	ds.Meeting_UsersForbidDelegatorToVote(poll.MeetingID).Lazy(&dummyBool)
+ 
++	var dummyMaybeString dsfetch.Maybe[string]
++	for _, optionID := range poll.OptionIDs {
++		ds.Option_ContentObjectID(optionID).Lazy(&dummyMaybeString)
++	}
++
+ 	meetingUserIDsList := make([][]int, len(poll.EntitledGroupIDs))
+ 	for i, groupID := range poll.EntitledGroupIDs {
+ 		ds.Group_MeetingUserIDs(groupID).Lazy(&meetingUserIDsList[i])
+@@ -687,6 +752,61 @@ func (m *maybeInt) Value() (int, bool) {
  type ballot struct {
  	UserID maybeInt    `json:"user_id"`
  	Value  ballotValue `json:"value"`
@@ -133,7 +179,7 @@ index e09b2f7..4f8f005 100644
  
  func (v ballot) String() string {
 diff --git a/vote/vote_test.go b/vote/vote_test.go
-index 328d418..fe33367 100644
+index 328d418..97cf102 100644
 --- a/vote/vote_test.go
 +++ b/vote/vote_test.go
 @@ -4,6 +4,7 @@ import (
@@ -144,7 +190,7 @@ index 328d418..fe33367 100644
  	"reflect"
  	"strings"
  	"testing"
-@@ -1642,3 +1643,212 @@ func TestAllLiveVotesIDs_LiveVote_disabled_or_type_is_not_named(t *testing.T) {
+@@ -1642,3 +1643,264 @@ func TestAllLiveVotesIDs_LiveVote_disabled_or_type_is_not_named(t *testing.T) {
  		t.Errorf("Got %v, expected %v", liveVotes, expect)
  	}
  }
@@ -206,6 +252,14 @@ index 328d418..fe33367 100644
 +		{
 +			"Motion",
 +			"motion/1",
++			true,
++			`{"split":[{"weight":"2","value":{"1":1}},{"weight":"2","value":"A"}]}`,
++			"Split votes are only allowed in elections",
++			nil,
++		},
++		{
++			"Topic",
++			"topic/1",
 +			true,
 +			`{"split":[{"weight":"2","value":{"1":1}},{"weight":"2","value":"A"}]}`,
 +			"Split votes are only allowed in elections",
@@ -355,5 +409,49 @@ index 328d418..fe33367 100644
 +				}
 +			}
 +		})
++	}
++}
++
++func TestVoteSplitListElection(t *testing.T) {
++	ctx := context.Background()
++	backend := memory.New()
++	ds := &StubGetter{data: dsmock.YAMLData(`
++	poll/1:
++		meeting_id: 1
++		entitled_group_ids: [1]
++		pollmethod: Y
++		option_ids: [1]
++		global_abstain: true
++		backend: fast
++		type: named
++		content_object_id: assignment/1
++		sequential_number: 1
++		onehundred_percent_base: base
++		title: myPoll
++
++	option/1:
++		meeting_id: 1
++		content_object_id: poll_candidate_list/1
++
++	meeting/1/users_enable_vote_weight: true
++
++	user/1:
++		is_present_in_meeting_ids: [1]
++		meeting_user_ids: [10]
++		default_vote_weight: "4.000000"
++	meeting_user/10:
++		group_ids: [1]
++		meeting_id: 1
++	`)}
++	v, _, _ := vote.New(ctx, backend, backend, ds, true)
++
++	if err := backend.Start(ctx, 1); err != nil {
++		t.Fatalf("bakckend.Start: %v", err)
++	}
++
++	err := v.Vote(ctx, 1, 1, strings.NewReader(`{"split":[{"weight":"2","value":{"1":1}},{"weight":"2","value":"A"}]}`))
++
++	if !errors.Is(err, vote.ErrInvalid) || !strings.Contains(err.Error(), "Split votes are not allowed in list elections") {
++		t.Fatalf("expected list election error, got: %v", err)
 +	}
 +}

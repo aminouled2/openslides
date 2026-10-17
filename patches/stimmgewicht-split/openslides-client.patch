@@ -1,9 +1,9 @@
 diff --git a/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote-split.spec.ts b/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote-split.spec.ts
 new file mode 100644
-index 000000000..b10ced4b3
+index 000000000..0d65b1cc8
 --- /dev/null
 +++ b/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote-split.spec.ts
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,112 @@
 +// Loads the repositories first to avoid an import cycle when this spec runs alone.
 +import '@app/site/modules/wait-for-action-dialog/services/wait-for-action-dialog.service';
 +
@@ -52,6 +52,11 @@ index 000000000..b10ced4b3
 +    it(`is only offered in elections`, () => {
 +        expect(ctx.canSplitVote(user)).toBeTrue();
 +        ctx.poll.isAssignmentPoll = false;
++        expect(ctx.canSplitVote(user)).toBeFalse();
++    });
++
++    it(`is not offered in list elections`, () => {
++        ctx.poll.isListPoll = true;
 +        expect(ctx.canSplitVote(user)).toBeFalse();
 +    });
 +
@@ -112,7 +117,7 @@ index 000000000..b10ced4b3
 +    });
 +});
 diff --git a/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.html b/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.html
-index 596aeef03..6182ba2ee 100644
+index 596aeef03..9f6c10a9b 100644
 --- a/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.html
 +++ b/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.html
 @@ -41,334 +41,357 @@
@@ -380,7 +385,7 @@ index 596aeef03..6182ba2ee 100644
 -                                                    </div>
 -                                                }
 -                                            </span>
--                                        }
+                                         }
 -                                        @if (option.text) {
 -                                            <span>
 -                                                <span>{{ option.text }}</span>
@@ -388,7 +393,7 @@ index 596aeef03..6182ba2ee 100644
 -                                        }
 -                                        @if (!option.content_object && !option.text) {
 -                                            <i>{{ noDataLabel | translate }}</i>
-                                         }
+-                                        }
 -                                    </div>
 -                                }
 -                                @if (!settings.isSplitSingleOption && option.isListOption && !isMobile) {
@@ -677,11 +682,11 @@ index 596aeef03..6182ba2ee 100644
 +                                    <div class="or-divider-grid" role="row">
 +                                        <div class="hr-wrapper">
 +                                            <hr />
-                                         </div>
++                                        </div>
 +                                        <div>{{ 'OR' | translate }}</div>
 +                                        <div class="hr-wrapper">
 +                                            <hr />
-+                                        </div>
+                                         </div>
 +                                    </div>
 +                                }
 +
@@ -753,7 +758,7 @@ index 596aeef03..6182ba2ee 100644
              }
          }
          <os-poll-cannot-vote-message
-@@ -396,3 +419,82 @@
+@@ -396,3 +419,112 @@
          </button>
      </div>
  </ng-template>
@@ -771,26 +776,48 @@ index 596aeef03..6182ba2ee 100644
 +                        <mat-icon>check</mat-icon>
 +                    }
 +                </div>
++                <div aria-hidden="true" class="split-ballot-option">
++                    <span></span>
++                    <span class="split-ballot-actions">
++                        @for (action of voteActions; track action.vote) {
++                            <b class="split-ballot-header">{{ action.label | translate }}</b>
++                        }
++                    </span>
++                </div>
 +                @for (option of poll.options; track option.id) {
 +                    <div class="split-ballot-option">
 +                        <span>{{ getOptionLabel(option) }}</span>
 +                        <span class="split-ballot-actions">
 +                            @for (action of voteActions; track action.vote) {
 +                                <button
-+                                    mat-stroked-button
++                                    class="vote-button"
++                                    mat-raised-button
 +                                    role="checkbox"
 +                                    type="button"
++                                    [ariaLabel]="getOptionLabel(option) + ': ' + (action.label | translate)"
 +                                    [attr.aria-checked]="isBallotOptionSelected(ballot, option.id, action.vote!)"
 +                                    [disabled]="isDeliveringVote(delegation)"
-+                                    [ngClass]="
-+                                        isBallotOptionSelected(ballot, option.id, action.vote!) ? action.css! : ''
-+                                    "
 +                                    (click)="toggleBallotOption(ballot, option.id, action.vote!)"
 +                                >
-+                                    @if (isBallotOptionSelected(ballot, option.id, action.vote!)) {
-+                                        <mat-icon>check</mat-icon>
-+                                    }
-+                                    {{ action.label | translate }}
++                                    <div
++                                        class="vote-button-content"
++                                        [ngClass]="
++                                            isBallotOptionSelected(ballot, option.id, action.vote!)
++                                                ? ''
++                                                : 'button-content-opaque'
++                                        "
++                                    >
++                                        <os-custom-icon
++                                            class="vote-button-cross"
++                                            [customIcon]="drawnCross"
++                                            [ngClass]="
++                                                isBallotOptionSelected(ballot, option.id, action.vote!)
++                                                    ? action.css!
++                                                    : ''
++                                            "
++                                        ></os-custom-icon>
++                                        <mat-icon class="vote-button-circle">radio_button_unchecked</mat-icon>
++                                    </div>
 +                                </button>
 +                            }
 +                        </span>
@@ -802,18 +829,26 @@ index 596aeef03..6182ba2ee 100644
 +                            <span>{{ getGlobalOptionName(action) | translate }}</span>
 +                            <span class="split-ballot-actions">
 +                                <button
-+                                    mat-stroked-button
++                                    class="vote-button"
++                                    mat-raised-button
 +                                    role="checkbox"
 +                                    type="button"
++                                    [ariaLabel]="getGlobalOptionName(action) | translate"
 +                                    [attr.aria-checked]="ballot.global === action.vote"
 +                                    [disabled]="isDeliveringVote(delegation)"
-+                                    [ngClass]="ballot.global === action.vote ? action.css! : ''"
 +                                    (click)="toggleBallotGlobal(ballot, $any(action.vote))"
 +                                >
-+                                    @if (ballot.global === action.vote) {
-+                                        <mat-icon>check</mat-icon>
-+                                    }
-+                                    {{ action.label | translate }}
++                                    <div
++                                        class="vote-button-content"
++                                        [ngClass]="ballot.global === action.vote ? '' : 'button-content-opaque'"
++                                    >
++                                        <os-custom-icon
++                                            class="vote-button-cross"
++                                            [customIcon]="drawnCross"
++                                            [ngClass]="ballot.global === action.vote ? 'button-content-not-opaque' : ''"
++                                        ></os-custom-icon>
++                                        <mat-icon class="vote-button-circle">radio_button_unchecked</mat-icon>
++                                    </div>
 +                                </button>
 +                            </span>
 +                        </div>
@@ -837,10 +872,40 @@ index 596aeef03..6182ba2ee 100644
 +    </div>
 +</ng-template>
 diff --git a/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.scss b/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.scss
-index 29ea1d52f..01b412b8f 100644
+index 29ea1d52f..e10a6454d 100644
 --- a/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.scss
 +++ b/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.scss
-@@ -269,3 +269,49 @@
+@@ -1,12 +1,7 @@
+ @use 'src/assets/styles/poll-colors.scss';
+ @use 'src/assets/styles/poll-styles-common.scss';
+ 
+-%vote-grid-base {
+-    display: grid;
+-    grid-gap: 10px;
+-    padding: 10px;
+-    margin: 0 10px;
+-
++%vote-buttons {
+     .vote-button {
+         min-width: 50px;
+         height: 50px;
+@@ -53,6 +48,15 @@
+             opacity: 1;
+         }
+     }
++}
++
++%vote-grid-base {
++    display: grid;
++    grid-gap: 10px;
++    padding: 10px;
++    margin: 0 10px;
++
++    @extend %vote-buttons;
+ 
+     .vote-label {
+         margin-left: 10px;
+@@ -269,3 +273,50 @@
  .text-right {
      text-align: right;
  }
@@ -857,6 +922,7 @@ index 29ea1d52f..01b412b8f 100644
 +}
 +
 +.split-ballot {
++    @extend %vote-buttons;
 +    border: 1px solid var(--theme-border, rgba(0, 0, 0, 0.2));
 +    border-radius: 8px;
 +    padding: 12px;
@@ -882,16 +948,16 @@ index 29ea1d52f..01b412b8f 100644
 +
 +    .split-ballot-actions {
 +        display: flex;
-+        gap: 4px;
++        gap: 8px;
++    }
 +
-+        button[aria-checked='true'] {
-+            border-color: currentColor;
-+            font-weight: bold;
-+        }
++    .split-ballot-header {
++        text-align: center;
++        width: 50px;
 +    }
 +}
 diff --git a/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.ts b/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.ts
-index 4f449d869..fc04b6ca0 100644
+index 4f449d869..e85a08100 100644
 --- a/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.ts
 +++ b/client/src/app/site/pages/meetings/modules/poll/components/base-poll-vote/base-poll-vote.component.ts
 @@ -17,6 +17,7 @@ import { ViewUser } from '@app/site/pages/meetings/view-models/view-user';
@@ -957,7 +1023,7 @@ index 4f449d869..fc04b6ca0 100644
              })
          );
      }
-@@ -364,6 +392,137 @@ export abstract class BasePollVoteComponent<C extends PollContentObject = any> e
+@@ -364,6 +392,138 @@ export abstract class BasePollVoteComponent<C extends PollContentObject = any> e
          }
      }
  
@@ -980,6 +1046,7 @@ index 4f449d869..fc04b6ca0 100644
 +        const weight = this.getVoteWeight(user);
 +        return (
 +            this.poll.isAssignmentPoll &&
++            !this.poll.isListPoll &&
 +            this.poll.type !== PollType.Analog &&
 +            !(this.poll.max_votes_per_option > 1) &&
 +            Number.isInteger(weight) &&
